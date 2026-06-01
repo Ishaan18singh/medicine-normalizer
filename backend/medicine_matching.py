@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-# Sample medicine database (500+ medicines)
 MEDICINE_DATABASE = {
     'paracetamol': {
         'generic': 'paracetamol',
@@ -153,7 +152,7 @@ class MedicineMatchingEngine:
             self.medicine_names.append(generic)
             self.medicine_map[generic] = generic
             
-            # Add brand names
+
             for brand in data['brands']:
                 self.medicine_names.append(brand)
                 self.medicine_map[brand] = generic
@@ -207,7 +206,6 @@ class MedicineMatchingEngine:
                 'alternatives': [alt for alt in alternatives if alt.lower() != input_lower]
             }
         
-        # Strategy 3: Semantic similarity
         if self.model and self.embeddings is not None:
             try:
                 input_embedding = self.model.encode([input_lower])
@@ -230,7 +228,6 @@ class MedicineMatchingEngine:
             except Exception as e:
                 logger.error(f'Error in semantic matching: {e}')
         
-        # No match found
         return {
             'input': input_medicine,
             'normalized': input_medicine,
@@ -245,14 +242,12 @@ class MedicineMatchingEngine:
             return MEDICINE_DATABASE[generic_lower]['brands']
         return []
 
-# Global instance
 matching_engine = MedicineMatchingEngine()
 
 async def init_medicine_db(db):
     """Initialize medicine database in MongoDB"""
     logger.info('Initializing medicine database...')
     
-    # Check if medicines collection is empty
     count = await db.medicines.count_documents({})
     if count == 0:
         # Insert all medicines
@@ -271,7 +266,6 @@ async def init_medicine_db(db):
     else:
         logger.info(f'Medicine database already contains {count} medicines')
     
-    # Create indexes
     await db.medicines.create_index('generic_name', unique=True)
     await db.users.create_index('email', unique=True)
     logger.info('Database indexes created')
