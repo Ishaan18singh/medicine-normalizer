@@ -27,7 +27,10 @@ const Sidebar = ({ currentPage }) => {
 
   return (
     <>
-      <button className="lg:hidden fixed top-4 left-4 z-50 bg-card p-2 rounded-md border border-border" onClick={() => setMobileOpen(!mobileOpen)}>
+      <button
+        className="lg:hidden fixed top-4 left-4 z-50 bg-card p-2 rounded-md border border-border"
+        onClick={() => setMobileOpen(!mobileOpen)}
+      >
         <Menu className="h-6 w-6" />
       </button>
       <div className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-card border-r border-border flex flex-col transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
@@ -44,7 +47,11 @@ const Sidebar = ({ currentPage }) => {
             const Icon = item.icon;
             const isActive = currentPage === item.path;
             return (
-              <Link key={item.path} to={item.path} className={`flex items-center gap-3 px-4 py-3 rounded-md text-sm font-medium transition-colors ${isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-foreground'}`}>
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center gap-3 px-4 py-3 rounded-md text-sm font-medium transition-colors ${isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-foreground'}`}
+              >
                 <Icon className="h-5 w-5" strokeWidth={1.5} />
                 {item.label}
               </Link>
@@ -52,13 +59,19 @@ const Sidebar = ({ currentPage }) => {
           })}
         </nav>
         <div className="p-4 border-t border-border">
-          <Button onClick={handleLogout} variant="outline" className="w-full justify-start gap-3 border-input hover:bg-accent">
+          <Button
+            onClick={handleLogout}
+            variant="outline"
+            className="w-full justify-start gap-3 border-input hover:bg-accent"
+          >
             <LogOut className="h-5 w-5" strokeWidth={1.5} />
             Logout
           </Button>
         </div>
       </div>
-      {mobileOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setMobileOpen(false)} />}
+      {mobileOpen && (
+        <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setMobileOpen(false)} />
+      )}
     </>
   );
 };
@@ -125,7 +138,9 @@ export default function BulkProcessing() {
       <main className="flex-1 p-4 md:p-6 lg:ml-0" data-testid="bulk-processing-main">
         <div className="max-w-5xl mx-auto">
           <div className="mb-8">
-            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight mb-2" style={{ fontFamily: 'Outfit' }}>Bulk Processing</h1>
+            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight mb-2" style={{ fontFamily: 'Outfit' }}>
+              Bulk Processing
+            </h1>
             <p className="text-base text-secondary-foreground">Process multiple medicine names at once</p>
           </div>
 
@@ -140,12 +155,22 @@ export default function BulkProcessing() {
               data-testid="bulk-medicine-input"
             />
             <div className="flex gap-3 mt-4">
-              <Button onClick={handleProcess} disabled={loading} className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-md px-6" data-testid="bulk-process-button">
+              <Button
+                onClick={handleProcess}
+                disabled={loading}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-md px-6"
+                data-testid="bulk-process-button"
+              >
                 <Upload className="h-4 w-4 mr-2" />
                 {loading ? 'Processing...' : 'Process All'}
               </Button>
               {results && (
-                <Button onClick={downloadCSV} variant="outline" className="border-input hover:bg-accent" data-testid="download-csv-button">
+                <Button
+                  onClick={downloadCSV}
+                  variant="outline"
+                  className="border-input hover:bg-accent"
+                  data-testid="download-csv-button"
+                >
                   <Download className="h-4 w-4 mr-2" />
                   Download CSV
                 </Button>
@@ -157,14 +182,21 @@ export default function BulkProcessing() {
             <Card className="bg-card border border-border shadow-sm rounded-lg p-6" data-testid="bulk-results">
               <h3 className="text-lg font-medium mb-4">Results ({results.length})</h3>
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {results.map((result, idx) => (
-                  <div key={idx} className="px-4 py-3 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors">
+                {results.map((result) => (
+                  <div
+                    key={`${result.input}-${result.normalized}`}
+                    className="px-4 py-3 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium capitalize">{result.input} → {result.normalized}</p>
-                        <p className="text-xs text-muted-foreground mt-1">Confidence: {(result.confidence * 100).toFixed(1)}%</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Confidence: {(result.confidence * 100).toFixed(1)}%
+                        </p>
                       </div>
-                      <span className="text-xs px-2 py-1 rounded-full bg-secondary/20 text-secondary-foreground capitalize">{result.type}</span>
+                      <span className="text-xs px-2 py-1 rounded-full bg-secondary/20 text-secondary-foreground capitalize">
+                        {result.type}
+                      </span>
                     </div>
                   </div>
                 ))}

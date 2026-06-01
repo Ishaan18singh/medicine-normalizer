@@ -108,13 +108,8 @@ export default function Dashboard() {
   const [result, setResult] = useState(null);
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-  useEffect(() => {
-    if (location.state?.demoInput) {
-      handleNormalize();
-    }
-  }, []);
+  const handleNormalize = React.useCallback(async () => {
 
-  const handleNormalize = async () => {
     if (!medicine.trim()) {
       toast.error('Please enter a medicine name');
       return;
@@ -134,7 +129,14 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+
+  }, [medicine, BACKEND_URL]);
+
+  useEffect(() => {
+    if (location.state?.demoInput) {
+      handleNormalize();
+    }
+  }, [location.state?.demoInput, handleNormalize]);
 
   const getConfidenceColor = (confidence) => {
     if (confidence >= 0.9) return 'text-green-600';
