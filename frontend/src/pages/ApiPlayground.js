@@ -68,7 +68,7 @@ export default function ApiPlayground() {
   const [requestBody, setRequestBody] = useState('{\n  "medicine": "crocin"\n}');
   const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(false);
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
   const endpoints = [
     { value: '/api/normalize', method: 'POST', body: '{\n  "medicine": "crocin"\n}' },

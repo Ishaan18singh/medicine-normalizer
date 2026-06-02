@@ -75,7 +75,7 @@ const Sidebar = ({ currentPage }) => {
 export default function Analytics() {
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState(null);
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
   const fetchAnalytics = React.useCallback(async () => {
     setLoading(true);

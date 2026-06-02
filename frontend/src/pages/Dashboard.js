@@ -106,7 +106,7 @@ export default function Dashboard() {
   const [medicine, setMedicine] = useState(location.state?.demoInput || '');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
   const handleNormalize = React.useCallback(async () => {
 

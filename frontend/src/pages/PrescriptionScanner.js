@@ -68,7 +68,7 @@ export default function PrescriptionScanner() {
   const [preview, setPreview] = useState(null);
   const [results, setResults] = useState(null);
   const fileInputRef = useRef(null);
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0];
