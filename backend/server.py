@@ -35,7 +35,7 @@ JWT_ALGORITHM = 'HS256'
 ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'admin@mednormalize.ai')
 ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 # Configure logging
 logging.basicConfig(
@@ -112,67 +112,68 @@ def create_refresh_token(user_id: str) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
+
 from fastapi.security import HTTPAuthorizationCredentials
 
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
+
     token = None
 
-    # Swagger Bearer token
+    # Authorization header (Swagger/API clients)
     if credentials:
         token = credentials.credentials
 
-    # Cookie fallback
+    # Cookie fallback (Frontend)
     if not token:
-        token = request.cookies.get('access_token')
+        token = request.cookies.get("access_token")
 
     if not token:
-        raise HTTPException(status_code=401, detail='Not authenticated')
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated"
+        )
 
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM]
+        )
 
-        if payload.get('type') != 'access':
-            raise HTTPException(status_code=401, detail='Invalid token type')
+        if payload.get("type") != "access":
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token type"
+            )
 
         user = await db.users.find_one(
-            {'_id': ObjectId(payload['sub'])},
-            {'_id': 0, 'password_hash': 0}
+            {"_id": ObjectId(payload["sub"])},
+            {"_id": 0, "password_hash": 0}
         )
 
         if not user:
-            raise HTTPException(status_code=401, detail='User not found')
+            raise HTTPException(
+                status_code=401,
+                detail="User not found"
+            )
 
-        user['id'] = str(payload['sub'])
+        user["id"] = str(payload["sub"])
         return user
 
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail='Token expired')
+        raise HTTPException(
+            status_code=401,
+            detail="Token expired"
+        )
 
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail='Invalid token')
-    token = request.cookies.get('access_token')
-    if not token:
-        auth_header = request.headers.get('Authorization', '')
-        if auth_header.startswith('Bearer '):
-            token = auth_header[7:]
-    if not token:
-        raise HTTPException(status_code=401, detail='Not authenticated')
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        if payload.get('type') != 'access':
-            raise HTTPException(status_code=401, detail='Invalid token type')
-        user = await db.users.find_one({'_id': ObjectId(payload['sub'])}, {'_id': 0, 'password_hash': 0})
-        if not user:
-            raise HTTPException(status_code=401, detail='User not found')
-        user['id'] = str(payload['sub'])
-        return user
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail='Token expired')
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail='Invalid token')
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token"
+        )
 
 # Create the main app
 app = FastAPI(title='MedNormalize AI API', version='1.0.0')

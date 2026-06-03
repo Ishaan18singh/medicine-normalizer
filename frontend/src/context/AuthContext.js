@@ -23,8 +23,8 @@ function formatApiErrorDetail(detail) {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
-
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+  console.log("BACKEND_URL =", BACKEND_URL);
   useEffect(() => {
     checkAuth();
   }, []);
