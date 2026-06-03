@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status, UploadFile, File
-from fastapi.security import HTTPBearer
 from dotenv import load_dotenv
+load_dotenv ()
+from fastapi.security import HTTPBearer
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
@@ -60,6 +61,9 @@ class UserResponse(BaseModel):
     name: str
     role: str
     created_at: datetime
+class LoginResponse(UserResponse):
+    access_token: str
+    token_type: str    
 
 # Medicine Models
 class MedicineNormalizeRequest(BaseModel):
@@ -108,7 +112,47 @@ def create_refresh_token(user_id: str) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-async def get_current_user(request: Request) -> dict:
+from fastapi.security import HTTPAuthorizationCredentials
+
+async def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> dict:
+    token = None
+
+    # Swagger Bearer token
+    if credentials:
+        token = credentials.credentials
+
+    # Cookie fallback
+    if not token:
+        token = request.cookies.get('access_token')
+
+    if not token:
+        raise HTTPException(status_code=401, detail='Not authenticated')
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+
+        if payload.get('type') != 'access':
+            raise HTTPException(status_code=401, detail='Invalid token type')
+
+        user = await db.users.find_one(
+            {'_id': ObjectId(payload['sub'])},
+            {'_id': 0, 'password_hash': 0}
+        )
+
+        if not user:
+            raise HTTPException(status_code=401, detail='User not found')
+
+        user['id'] = str(payload['sub'])
+        return user
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail='Token expired')
+
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail='Invalid token')
     token = request.cookies.get('access_token')
     if not token:
         auth_header = request.headers.get('Authorization', '')
@@ -170,21 +214,57 @@ async def register(user: UserRegister, response: Response):
     
     return UserResponse(id=user_id, **user_dict)
 
-@auth_router.post('/login', response_model=UserResponse)
+@auth_router.post('/login', response_model=LoginResponse)
 async def login(credentials: UserLogin, response: Response):
     email = credentials.email.lower()
+
     user = await db.users.find_one({'email': email})
+
     if not user or not verify_password(credentials.password, user['password_hash']):
-        raise HTTPException(status_code=401, detail='Invalid email or password')
-    
+        raise HTTPException(
+            status_code=401,
+            detail='Invalid email or password'
+        )
+
     user_id = str(user['_id'])
-    access_token = create_access_token(user_id, user['email'], user.get('role', 'user'))
+
+    access_token = create_access_token(
+        user_id,
+        user['email'],
+        user.get('role', 'user')
+    )
+
     refresh_token = create_refresh_token(user_id)
-    
-    response.set_cookie(key='access_token', value=access_token, httponly=True, secure=False, samesite='lax', max_age=86400, path='/')
-    response.set_cookie(key='refresh_token', value=refresh_token, httponly=True, secure=False, samesite='lax', max_age=604800, path='/')
-    
-    return UserResponse(id=user_id, email=user['email'], name=user['name'], role=user.get('role', 'user'), created_at=user['created_at'])
+
+    response.set_cookie(
+        key='access_token',
+        value=access_token,
+        httponly=True,
+        secure=False,
+        samesite='lax',
+        max_age=86400,
+        path='/'
+    )
+
+    response.set_cookie(
+        key='refresh_token',
+        value=refresh_token,
+        httponly=True,
+        secure=False,
+        samesite='lax',
+        max_age=604800,
+        path='/'
+    )
+
+    return LoginResponse(
+        id=user_id,
+        email=user['email'],
+        name=user['name'],
+        role=user.get('role', 'user'),
+        created_at=user['created_at'],
+        access_token=access_token,
+        token_type='bearer'
+    )
 
 @auth_router.post('/logout')
 async def logout(response: Response):
@@ -315,12 +395,12 @@ async def startup_event():
         logger.info('Admin password updated')
     
     # Write test credentials
-    with open('/app/memory/test_credentials.md', 'w') as f:
-        f.write(f'''# MedNormalize AI Test Credentials\n\n## Admin Account\nEmail: {ADMIN_EMAIL}\nPassword: {ADMIN_PASSWORD}\nRole: admin\n\n## Test User Account\nEmail: user@mednormalize.ai\nPassword: user123\nRole: user\n\n## API Endpoints\n- POST /api/auth/register\n- POST /api/auth/login\n- GET /api/auth/me\n- POST /api/normalize\n- POST /api/bulk-normalize\n- POST /api/scan-prescription\n- GET /api/alternatives/:medicine\n- GET /api/analytics\n''')
-    
-    logger.info('Test credentials written to /app/memory/test_credentials.md')
+    logger.info(f'Admin credentials: {ADMIN_EMAIL} / {ADMIN_PASSWORD}')
 
 @app.on_event('shutdown')
 async def shutdown_db_client():
     client.close()
     logger.info('MongoDB connection closed')
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=8000)    

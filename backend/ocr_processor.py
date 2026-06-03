@@ -1,10 +1,10 @@
 import pytesseract
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 from PIL import Image
 import io
 import re
 import logging
 from typing import List
-
 logger = logging.getLogger(__name__)
 
 def extract_medicines_from_image(image_bytes: bytes) -> List[str]:
