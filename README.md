@@ -1,4 +1,5 @@
 MedNormalize AI
+
 🚀 AI-Powered Medicine Normalization & Drug Recommendation Platform
 MedNormalize AI is a full-stack healthcare application that uses Natural Language Processing (NLP), Semantic Search, and OCR to standardize medicine names, map brand drugs to their generic equivalents, and recommend therapeutic alternatives. The platform is designed to reduce medication lookup errors, improve prescription understanding, and streamline medicine information retrieval.
 Features
@@ -36,16 +37,20 @@ Normalize multiple medicines simultaneously
 Batch recommendation workflows
 
 Tech Stack
-Frontend
-React.js
+
+Frontend :
+React.js 
 Tailwind CSS
 Axios
-Backend
+
+Backend :
 FastAPI
 Python
-Database
+
+Database:
 MongoDB
-AI & Machine Learning
+
+AI & Machine Learning :
 Sentence-BERT
 Semantic Similarity Search
 Fuzzy Matching
