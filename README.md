@@ -34,6 +34,7 @@ Confidence score monitoring
 ⚡ Bulk Processing
 Normalize multiple medicines simultaneously
 Batch recommendation workflows
+
 Tech Stack
 Frontend
 React.js
