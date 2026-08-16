@@ -1,271 +1,247 @@
-import logging
-from typing import Dict, List, Optional
-from sentence_transformers import SentenceTransformer
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-from thefuzz import fuzz, process
+"""Medicine normalisation: brand/synonym -> generic name.
+
+Data comes from `datasets/medicine_master.json` (repo root), built from the
+openFDA drug-label bulk download plus a curated layer of Indian/international
+brands and INN<->USAN synonyms (paracetamol/acetaminophen, salbutamol/albuterol,
+...).
+
+Matching runs in four tiers, cheapest first:
+
+  1. exact       - direct hit on a generic, brand or synonym          conf 1.00
+  2. salt-strip  - "metformin hydrochloride" -> "metformin"           conf 0.97
+  3. fuzzy       - token_set_ratio, typo tolerant                     conf score/100
+  4. semantic    - sentence-transformer cosine similarity             conf cosine
+
+Tiers 3 and 4 only search entries flagged `searchable` in the dataset - i.e.
+prescription drugs or products carrying an FDA pharmacologic class. The raw
+openFDA data is roughly half OTC cosmetics (sunscreens, hand sanitiser,
+toothpaste); without that filter a query like "dolo" happily fuzzy-matches a
+sunscreen brand.
+"""
 import json
+import logging
+import os
+import re
+import unicodedata
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import numpy as np
+from thefuzz import fuzz, process
 
 logger = logging.getLogger(__name__)
 
-MEDICINE_DATABASE = {
-    'paracetamol': {
-        'generic': 'paracetamol',
-        'brands': ['crocin', 'calpol', 'dolo', 'metacin', 'tylenol', 'panadol'],
-        'category': 'analgesic',
-        'dosages': ['500mg', '650mg', '1000mg']
-    },
-    'ibuprofen': {
-        'generic': 'ibuprofen',
-        'brands': ['brufen', 'advil', 'motrin', 'nurofen'],
-        'category': 'nsaid',
-        'dosages': ['200mg', '400mg', '600mg']
-    },
-    'metformin': {
-        'generic': 'metformin',
-        'brands': ['glucophage', 'fortamet', 'glumetza', 'riomet'],
-        'category': 'antidiabetic',
-        'dosages': ['500mg', '850mg', '1000mg']
-    },
-    'lisinopril': {
-        'generic': 'lisinopril',
-        'brands': ['prinivil', 'zestril'],
-        'category': 'ace_inhibitor',
-        'dosages': ['2.5mg', '5mg', '10mg', '20mg', '40mg']
-    },
-    'atorvastatin': {
-        'generic': 'atorvastatin',
-        'brands': ['lipitor', 'atorva', 'storvas'],
-        'category': 'statin',
-        'dosages': ['10mg', '20mg', '40mg', '80mg']
-    },
-    'amlodipine': {
-        'generic': 'amlodipine',
-        'brands': ['norvasc', 'amlong'],
-        'category': 'calcium_channel_blocker',
-        'dosages': ['2.5mg', '5mg', '10mg']
-    },
-    'omeprazole': {
-        'generic': 'omeprazole',
-        'brands': ['prilosec', 'omez', 'omepral'],
-        'category': 'proton_pump_inhibitor',
-        'dosages': ['10mg', '20mg', '40mg']
-    },
-    'aspirin': {
-        'generic': 'aspirin',
-        'brands': ['disprin', 'ecosprin', 'bayer aspirin'],
-        'category': 'antiplatelet',
-        'dosages': ['75mg', '150mg', '325mg']
-    },
-    'amoxicillin': {
-        'generic': 'amoxicillin',
-        'brands': ['amoxil', 'moxatag', 'trimox'],
-        'category': 'antibiotic',
-        'dosages': ['250mg', '500mg', '875mg']
-    },
-    'azithromycin': {
-        'generic': 'azithromycin',
-        'brands': ['zithromax', 'azithral', 'azee'],
-        'category': 'antibiotic',
-        'dosages': ['250mg', '500mg']
-    },
-    'cetirizine': {
-        'generic': 'cetirizine',
-        'brands': ['zyrtec', 'cetrizet', 'alerid'],
-        'category': 'antihistamine',
-        'dosages': ['5mg', '10mg']
-    },
-    'pantoprazole': {
-        'generic': 'pantoprazole',
-        'brands': ['protonix', 'pantodac', 'pantop'],
-        'category': 'proton_pump_inhibitor',
-        'dosages': ['20mg', '40mg']
-    },
-    'levothyroxine': {
-        'generic': 'levothyroxine',
-        'brands': ['synthroid', 'levoxyl', 'eltroxin'],
-        'category': 'thyroid_hormone',
-        'dosages': ['25mcg', '50mcg', '75mcg', '100mcg']
-    },
-    'losartan': {
-        'generic': 'losartan',
-        'brands': ['cozaar', 'losacar'],
-        'category': 'arb',
-        'dosages': ['25mg', '50mg', '100mg']
-    },
-    'gabapentin': {
-        'generic': 'gabapentin',
-        'brands': ['neurontin', 'gabapin'],
-        'category': 'anticonvulsant',
-        'dosages': ['100mg', '300mg', '400mg']
-    },
-    'simvastatin': {
-        'generic': 'simvastatin',
-        'brands': ['zocor', 'simvotin'],
-        'category': 'statin',
-        'dosages': ['5mg', '10mg', '20mg', '40mg']
-    },
-    'clopidogrel': {
-        'generic': 'clopidogrel',
-        'brands': ['plavix', 'clopivas'],
-        'category': 'antiplatelet',
-        'dosages': ['75mg']
-    },
-    'montelukast': {
-        'generic': 'montelukast',
-        'brands': ['singulair', 'montair'],
-        'category': 'leukotriene_inhibitor',
-        'dosages': ['4mg', '5mg', '10mg']
-    },
-    'ranitidine': {
-        'generic': 'ranitidine',
-        'brands': ['zantac', 'aciloc'],
-        'category': 'h2_blocker',
-        'dosages': ['150mg', '300mg']
-    },
-    'diclofenac': {
-        'generic': 'diclofenac',
-        'brands': ['voltaren', 'voveran'],
-        'category': 'nsaid',
-        'dosages': ['50mg', '75mg', '100mg']
-    }
-}
+DATASET_PATH = Path(
+    os.environ.get("MEDICINE_DATASET")
+    or Path(__file__).parent.parent / "datasets" / "medicine_master.json"
+)
+
+FUZZY_CUTOFF = int(os.environ.get("FUZZY_CUTOFF", "80"))
+SEMANTIC_CUTOFF = float(os.environ.get("SEMANTIC_CUTOFF", "0.60"))
+EMBEDDING_MODEL = os.environ.get(
+    "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+
+_SALTS = re.compile(
+    r"\b(hydrochloride|hcl|sodium|potassium|calcium|sulfate|sulphate|maleate|"
+    r"tartrate|besylate|mesylate|succinate|fumarate|citrate|acetate|phosphate|"
+    r"nitrate|bromide|chloride|carbonate|dihydrate|monohydrate|anhydrous)\b")
+
+_DOSE = re.compile(r"\b\d+(\.\d+)?\s*(mg|mcg|g|ml|l|iu|%|units?)\b.*$")
+
+_FORMS = re.compile(
+    r"\b(tablets?|capsules?|injections?|solutions?|suspensions?|creams?|"
+    r"ointments?|gels?|syrups?|drops?|sprays?|powders?|oral|topical)\b")
+
+
+def normalize_text(value: str) -> str:
+    """Lowercase, de-accent and strip dosage/form noise from a query."""
+    if not value:
+        return ""
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    value = value.lower().strip()
+    value = re.sub(r"\s*\(.*?\)\s*", " ", value)
+    value = _DOSE.sub("", value)
+    value = _FORMS.sub(" ", value)
+    value = re.sub(r"[^a-z0-9 \-/,+]", " ", value)
+    return re.sub(r"\s+", " ", value).strip(" -,/")
+
+
+def strip_salt(value: str) -> str:
+    return re.sub(r"\s+", " ", _SALTS.sub(" ", value)).strip(" ,-/")
+
 
 class MedicineMatchingEngine:
-    def __init__(self):
-        logger.info('Initializing Medicine Matching Engine...')
-        try:
-            # Use all-MiniLM-L6-v2 for fast inference (lighter than BioBERT)
-            self.model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-            logger.info('Sentence transformer model loaded successfully')
-        except Exception as e:
-            logger.error(f'Error loading model: {e}')
-            self.model = None
-        
-        # Build search index
-        self.medicine_names = []
-        self.medicine_map = {}  # name -> generic
-        
-        for generic, data in MEDICINE_DATABASE.items():
-            # Add generic name
-            self.medicine_names.append(generic)
-            self.medicine_map[generic] = generic
-            
+    def __init__(self, dataset_path: Path = DATASET_PATH):
+        self.entries: Dict[str, dict] = {}
+        self.lookup: Dict[str, tuple] = {}      # any name -> (generic, kind)
+        self.search_names: List[str] = []       # fuzzy index
+        self.semantic_names: List[str] = []     # embedding index
+        self.model = None
+        self.embeddings = None
 
-            for brand in data['brands']:
-                self.medicine_names.append(brand)
-                self.medicine_map[brand] = generic
-        
-        # Generate embeddings for all medicine names
-        if self.model:
-            try:
-                self.embeddings = self.model.encode(self.medicine_names)
-                logger.info(f'Generated embeddings for {len(self.medicine_names)} medicine names')
-            except Exception as e:
-                logger.error(f'Error generating embeddings: {e}')
-                self.embeddings = None
-        else:
-            self.embeddings = None
-    
-    def match_medicine(self, input_medicine: str) -> Dict:
-        input_lower = input_medicine.lower().strip()
-        
-        # Strategy 1: Exact match
-        if input_lower in self.medicine_map:
-            generic = self.medicine_map[input_lower]
-            medicine_type = 'brand' if input_lower != generic else 'generic'
-            alternatives = MEDICINE_DATABASE[generic]['brands']
-            return {
-                'input': input_medicine,
-                'normalized': generic,
-                'type': medicine_type,
-                'confidence': 1.0,
-                'alternatives': [alt for alt in alternatives if alt.lower() != input_lower]
-            }
-        
-        # Strategy 2: Fuzzy matching
-        fuzzy_result = process.extractOne(
-            input_lower,
-            self.medicine_names,
-            scorer=fuzz.token_set_ratio,
-            score_cutoff=70
+        self._load_dataset(dataset_path)
+        self._load_model()
+
+    # -- data ---------------------------------------------------------------
+    def _load_dataset(self, path: Path) -> None:
+        try:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            logger.error("Medicine dataset not found at %s - matching disabled", path)
+            return
+        except json.JSONDecodeError as exc:
+            logger.error("Medicine dataset at %s is not valid JSON: %s", path, exc)
+            return
+
+        meta = payload.get("meta", {})
+        search_names = set()
+
+        for med in payload.get("medicines", []):
+            generic = med["generic"]
+            self.entries[generic] = med
+            self.lookup.setdefault(generic, (generic, "generic"))
+
+            for syn in med.get("synonyms", []):
+                self.lookup.setdefault(syn, (generic, "synonym"))
+            for brand in med.get("brands", []):
+                self.lookup.setdefault(brand, (generic, "brand"))
+
+            if med.get("searchable"):
+                search_names.add(generic)
+                search_names.update(med.get("synonyms", []))
+                search_names.update(med.get("brands", []))
+                self.semantic_names.append(generic)
+
+        self.search_names = sorted(search_names)
+        logger.info(
+            "Loaded %s generics (%s searchable), %s names in fuzzy index [%s]",
+            len(self.entries), len(self.semantic_names), len(self.search_names),
+            meta.get("source", "unknown source"),
         )
-        
-        if fuzzy_result:
-            matched_name, fuzzy_score = fuzzy_result
-            generic = self.medicine_map[matched_name]
-            confidence = fuzzy_score / 100.0
-            medicine_type = 'brand' if matched_name != generic else 'generic'
-            alternatives = MEDICINE_DATABASE[generic]['brands']
-            return {
-                'input': input_medicine,
-                'normalized': generic,
-                'type': medicine_type,
-                'confidence': confidence,
-                'alternatives': [alt for alt in alternatives if alt.lower() != input_lower]
-            }
-        
-        if self.model and self.embeddings is not None:
-            try:
-                input_embedding = self.model.encode([input_lower])
-                similarities = cosine_similarity(input_embedding, self.embeddings)[0]
-                best_idx = np.argmax(similarities)
-                best_score = float(similarities[best_idx])
-                
-                if best_score > 0.6:
-                    matched_name = self.medicine_names[best_idx]
-                    generic = self.medicine_map[matched_name]
-                    medicine_type = 'brand' if matched_name != generic else 'generic'
-                    alternatives = MEDICINE_DATABASE[generic]['brands']
-                    return {
-                        'input': input_medicine,
-                        'normalized': generic,
-                        'type': medicine_type,
-                        'confidence': best_score,
-                        'alternatives': [alt for alt in alternatives if alt.lower() != input_lower]
-                    }
-            except Exception as e:
-                logger.error(f'Error in semantic matching: {e}')
-        
+
+    def _load_model(self) -> None:
+        """Embeddings are a nice-to-have; exact+fuzzy still work without them."""
+        if not self.semantic_names:
+            return
+        try:
+            from sentence_transformers import SentenceTransformer
+
+            self.model = SentenceTransformer(EMBEDDING_MODEL)
+            self.embeddings = self.model.encode(
+                self.semantic_names, batch_size=256, show_progress_bar=False,
+                normalize_embeddings=True)
+            logger.info("Embedded %s generic names", len(self.semantic_names))
+        except Exception as exc:
+            logger.warning(
+                "Semantic matching unavailable (%s) - falling back to exact+fuzzy", exc)
+            self.model = None
+            self.embeddings = None
+
+    # -- matching -----------------------------------------------------------
+    def _result(self, query: str, generic: str, kind: str, confidence: float) -> Dict:
+        entry = self.entries.get(generic, {})
+        alternatives = [b for b in entry.get("brands", [])
+                        if b.lower() != query.lower()]
         return {
-            'input': input_medicine,
-            'normalized': input_medicine,
-            'type': 'unknown',
-            'confidence': 0.0,
-            'alternatives': []
+            "input": query,
+            "normalized": generic,
+            "type": kind,
+            "confidence": round(float(confidence), 4),
+            "alternatives": alternatives[:25],
         }
-    
+
+    def _unknown(self, query: str) -> Dict:
+        return {"input": query, "normalized": query, "type": "unknown",
+                "confidence": 0.0, "alternatives": []}
+
+    def match_medicine(self, input_medicine: str) -> Dict:
+        query = normalize_text(input_medicine)
+        if not query or not self.entries:
+            return self._unknown(input_medicine)
+
+        # 1. exact
+        hit = self.lookup.get(query)
+        if hit:
+            return self._result(input_medicine, hit[0], hit[1], 1.0)
+
+        # 2. salt-stripped exact
+        stripped = strip_salt(query)
+        if stripped and stripped != query:
+            hit = self.lookup.get(stripped)
+            if hit:
+                return self._result(input_medicine, hit[0], hit[1], 0.97)
+
+        # 3. fuzzy
+        if self.search_names:
+            match = process.extractOne(
+                query, self.search_names, scorer=fuzz.token_set_ratio,
+                score_cutoff=FUZZY_CUTOFF)
+            if match:
+                name, score = match
+                generic, kind = self.lookup.get(name, (name, "generic"))
+                return self._result(input_medicine, generic, kind, score / 100.0)
+
+        # 4. semantic
+        if self.model is not None and self.embeddings is not None:
+            try:
+                vec = self.model.encode([query], normalize_embeddings=True)
+                sims = np.dot(self.embeddings, vec[0])
+                best = int(np.argmax(sims))
+                score = float(sims[best])
+                if score >= SEMANTIC_CUTOFF:
+                    generic = self.semantic_names[best]
+                    return self._result(input_medicine, generic, "generic", score)
+            except Exception as exc:
+                logger.error("Semantic matching failed: %s", exc)
+
+        return self._unknown(input_medicine)
+
     def get_all_brands(self, generic_name: str) -> List[str]:
-        generic_lower = generic_name.lower()
-        if generic_lower in MEDICINE_DATABASE:
-            return MEDICINE_DATABASE[generic_lower]['brands']
-        return []
+        entry = self.entries.get(normalize_text(generic_name))
+        return entry.get("brands", []) if entry else []
+
+    def get_entry(self, generic_name: str) -> Optional[dict]:
+        return self.entries.get(normalize_text(generic_name))
+
 
 matching_engine = MedicineMatchingEngine()
 
+
 async def init_medicine_db(db):
-    """Initialize medicine database in MongoDB"""
-    logger.info('Initializing medicine database...')
-    
-    count = await db.medicines.count_documents({})
-    if count == 0:
-        # Insert all medicines
-        medicines_to_insert = []
-        for generic, data in MEDICINE_DATABASE.items():
-            medicines_to_insert.append({
-                'generic_name': generic,
-                'brand_names': data['brands'],
-                'category': data['category'],
-                'dosages': data['dosages'],
-                'created_at': datetime.now(timezone.utc)
-            })
-        
-        await db.medicines.insert_many(medicines_to_insert)
-        logger.info(f'Inserted {len(medicines_to_insert)} medicines into database')
-    else:
-        logger.info(f'Medicine database already contains {count} medicines')
-    
-    await db.medicines.create_index('generic_name', unique=True)
-    await db.users.create_index('email', unique=True)
-    logger.info('Database indexes created')
+    """Seed MongoDB with the medicine dictionary (idempotent)."""
+    logger.info("Initializing medicine database...")
+
+    await db.medicines.create_index("generic_name", unique=True)
+    await db.users.create_index("email", unique=True)
+
+    existing = await db.medicines.count_documents({})
+    if existing >= len(matching_engine.entries) > 0:
+        logger.info("Medicine collection already holds %s entries", existing)
+        return
+
+    from pymongo import UpdateOne
+
+    now = datetime.now(timezone.utc)
+    ops = [
+        UpdateOne(
+            {"generic_name": med["generic"]},
+            {"$set": {
+                "generic_name": med["generic"],
+                "brand_names": med.get("brands", []),
+                "synonyms": med.get("synonyms", []),
+                "category": med.get("category", ""),
+                "routes": med.get("routes", []),
+                "rx": med.get("rx", False),
+                "searchable": med.get("searchable", False),
+                "updated_at": now,
+            }},
+            upsert=True,
+        )
+        for med in matching_engine.entries.values()
+    ]
+
+    if ops:
+        for i in range(0, len(ops), 1000):
+            await db.medicines.bulk_write(ops[i:i + 1000], ordered=False)
+        logger.info("Upserted %s medicines into MongoDB", len(ops))
