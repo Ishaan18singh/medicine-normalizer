@@ -74,14 +74,14 @@ docker run -p 7860:7860 \
 
 ## Medicine dataset
 
-`backend/data/medicine_master.json` — **1,623 generics, 2,093 brand names,
-472 synonyms** (848 generics in the fuzzy/semantic index).
+`backend/data/medicine_master.json` — **6,261 generics, 12,022 brand names,
+1,339 synonyms** (2,709 generics in the fuzzy/semantic index).
 
 Built by `tools/extract_openfda.py` + `tools/build_dataset.py` from the openFDA
 drug-label bulk download, then merged with a curated layer. Rebuild with:
 
 ```bash
-python tools/extract_openfda.py drug-label-0001-of-0013.json openfda_extract.json
+python tools/extract_openfda.py drug-label-0001-of-0013.json ... drug-label-0006-of-0013.json openfda_extract.json
 python tools/build_dataset.py openfda_extract.json backend/data/medicine_master.json
 ```
 
@@ -92,14 +92,14 @@ Three things the raw openFDA data needed before it was usable:
    sit on top, and aliases are merged so both spellings return one answer.
 2. **Salt forms fragment the data.** Labels say `metformin hydrochloride`; users
    type `metformin`. Salt forms are folded into the base generic as synonyms.
-3. **Half of it is not medicine.** Shard 0001 is dominated by sunscreen, hand
-   sanitiser and toothpaste. Only prescription drugs or products with an FDA
-   pharmacologic class go into the fuzzy index, so `dolo` cannot fuzzy-match a
-   sunscreen brand.
+3. **Much of it is not medicine.** OTC/cosmetic labelling (sunscreen, hand
+   sanitiser, toothpaste) is common in the raw data. Only prescription drugs or
+   products with an FDA pharmacologic class go into the fuzzy index, so `dolo`
+   cannot fuzzy-match a sunscreen brand.
 
-Coverage caveat: this is **1 of 13 shards** — 20,000 of 258,792 label records
-(~7.7%). Running the same two scripts over the other twelve files will grow the
-dictionary substantially.
+Coverage caveat: this is **6 of 13 shards** — 120,000 of 258,792 label records
+(~46.4%). Running the same two scripts over the remaining seven files will grow
+the dictionary further.
 
 ## Notes
 

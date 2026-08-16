@@ -214,12 +214,18 @@ for names in list(groups.values()):
 meds = sorted(entries.values(), key=lambda d: (-d["label_count"], d["generic"]))
 searchable = [m for m in meds if m["searchable"]]
 
+# Corpus-wide record total is a fixed estimate (13-shard openFDA bulk download);
+# the source file only knows its own slice, so coverage is derived from both.
+CORPUS_TOTAL_RECORDS = 258792
+source_records = raw.get("records", 20000)
+coverage_pct = 100 * source_records / CORPUS_TOTAL_RECORDS
+
 OUT.write_text(json.dumps({
     "meta": {
-        "source": "openFDA drug label bulk download, file 0001 of 0013",
-        "source_records": 20000,
-        "corpus_total_records": 258792,
-        "coverage_note": "One shard of thirteen; ~7.7% of the openFDA label corpus.",
+        "source": raw.get("source", "openFDA drug label bulk download, file 0001 of 0013"),
+        "source_records": source_records,
+        "corpus_total_records": CORPUS_TOTAL_RECORDS,
+        "coverage_note": f"{coverage_pct:.1f}% of the openFDA label corpus.",
         "curated_layer": "Indian/international brands + INN<->USAN synonyms",
         "generics": len(meds),
         "searchable_generics": len(searchable),
