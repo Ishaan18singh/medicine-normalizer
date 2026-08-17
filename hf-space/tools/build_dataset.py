@@ -100,6 +100,17 @@ CURATED = {
 }
 
 
+CURATED_BRANDS = {b for brands, _ in CURATED.values() for b in brands}
+
+
+def brand_priority(brand: str) -> tuple:
+    """Curated (human-picked, recognizable) brands first; among openFDA brands,
+    shorter names sort first since real brand names are 1-2 words while raw
+    label text ('8hr arthritis pain relief') tends to run long. Alphabetical
+    otherwise - not a digit-first free-for-all like plain sorted()."""
+    return (0 if brand in CURATED_BRANDS else 1, len(brand.split()), brand)
+
+
 def base_generic(name: str) -> str:
     """Strip salt forms so 'metformin hydrochloride' folds into 'metformin'."""
     salts = (r"\b(hydrochloride|hcl|sodium|potassium|calcium|sulfate|sulphate|"
@@ -210,6 +221,9 @@ for names in list(groups.values()):
     for n in names - set(present):
         if n not in target["synonyms"]:
             target["synonyms"] = sorted(set(target["synonyms"]) | {n})
+
+for e in entries.values():
+    e["brands"] = sorted(set(e["brands"]), key=brand_priority)
 
 meds = sorted(entries.values(), key=lambda d: (-d["label_count"], d["generic"]))
 searchable = [m for m in meds if m["searchable"]]
