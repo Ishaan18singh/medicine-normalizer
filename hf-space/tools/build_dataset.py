@@ -97,6 +97,8 @@ CURATED = {
     "ciprofloxacin": (["cipro", "ciplox", "cifran"], "antibiotic"),
     "metronidazole": (["flagyl", "metrogyl", "aristogyl"], "antibiotic/antiprotozoal"),
     "prednisolone": (["omnacortil", "wysolone", "predmet"], "corticosteroid"),
+    "sertraline": (["zoloft", "setral", "zosert", "serlift", "daxid"],
+                   "antidepressant (ssri)"),
 }
 
 
