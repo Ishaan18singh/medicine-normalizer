@@ -40,6 +40,9 @@ FUZZY_CUTOFF = int(os.environ.get("FUZZY_CUTOFF", "80"))
 SEMANTIC_CUTOFF = float(os.environ.get("SEMANTIC_CUTOFF", "0.60"))
 EMBEDDING_MODEL = os.environ.get(
     "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+# torch + sentence-transformers push memory well past 512MB free-tier limits;
+# set to "false" on memory-constrained hosts to fall back to exact+fuzzy only.
+LOAD_EMBEDDINGS = os.environ.get("LOAD_EMBEDDINGS", "true").lower() != "false"
 
 _SALTS = re.compile(
     r"\b(hydrochloride|hcl|sodium|potassium|calcium|sulfate|sulphate|maleate|"
@@ -121,7 +124,7 @@ class MedicineMatchingEngine:
 
     def _load_model(self) -> None:
         """Embeddings are a nice-to-have; exact+fuzzy still work without them."""
-        if not self.semantic_names:
+        if not self.semantic_names or not LOAD_EMBEDDINGS:
             return
         try:
             from sentence_transformers import SentenceTransformer
