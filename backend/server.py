@@ -69,12 +69,16 @@ class LoginResponse(UserResponse):
 class MedicineNormalizeRequest(BaseModel):
     medicine: str
 
+class AlternativeBrand(BaseModel):
+    name: str
+    curated: bool
+
 class MedicineNormalizeResponse(BaseModel):
     input: str
     normalized: str
     type: str
     confidence: float
-    alternatives: List[str]
+    alternatives: List[AlternativeBrand]
 
 class BulkNormalizeRequest(BaseModel):
     medicines: List[str]
@@ -315,6 +319,23 @@ async def scan_prescription(file: UploadFile = File(...), current_user: dict = D
         results.append(result)
     
     return {'extracted_medicines': extracted_medicines, 'results': results}
+
+@api_router.post('/ocr-extract')
+async def ocr_extract(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    """OCR only, no normalization - lets the caller review/edit extracted text
+    (OCR misreads are common) before running it through /bulk-normalize."""
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail='File must be an image')
+
+    image_bytes = await file.read()
+    extracted_medicines = extract_medicines_from_image(image_bytes)
+    return {'extracted_medicines': extracted_medicines}
+
+@api_router.get('/suggest')
+async def suggest_medicine(q: str = '', current_user: dict = Depends(get_current_user)):
+    if len(q.strip()) < 2:
+        return {'suggestions': []}
+    return {'suggestions': matching_engine.suggest(q, limit=8)}
 
 @api_router.get('/alternatives/{medicine}')
 async def get_alternatives(medicine: str, current_user: dict = Depends(get_current_user)):

@@ -226,6 +226,7 @@ for names in list(groups.values()):
 
 for e in entries.values():
     e["brands"] = sorted(set(e["brands"]), key=brand_priority)
+    e["curated_brands"] = sorted(CURATED_BRANDS & set(e["brands"]))
 
 meds = sorted(entries.values(), key=lambda d: (-d["label_count"], d["generic"]))
 searchable = [m for m in meds if m["searchable"]]

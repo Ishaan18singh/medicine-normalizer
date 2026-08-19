@@ -143,14 +143,18 @@ class MedicineMatchingEngine:
     # -- matching -----------------------------------------------------------
     def _result(self, query: str, generic: str, kind: str, confidence: float) -> Dict:
         entry = self.entries.get(generic, {})
-        alternatives = [b for b in entry.get("brands", [])
-                        if b.lower() != query.lower()]
+        curated = set(entry.get("curated_brands", []))
+        alternatives = [
+            {"name": b, "curated": b in curated}
+            for b in entry.get("brands", [])
+            if b.lower() != query.lower()
+        ][:25]
         return {
             "input": query,
             "normalized": generic,
             "type": kind,
             "confidence": round(float(confidence), 4),
-            "alternatives": alternatives[:25],
+            "alternatives": alternatives,
         }
 
     def _unknown(self, query: str) -> Dict:
@@ -202,6 +206,45 @@ class MedicineMatchingEngine:
     def get_all_brands(self, generic_name: str) -> List[str]:
         entry = self.entries.get(normalize_text(generic_name))
         return entry.get("brands", []) if entry else []
+
+    def suggest(self, prefix: str, limit: int = 8) -> List[Dict]:
+        """Typeahead: names starting with the query rank above names merely
+        containing it; within each group, shorter (more likely to be what the
+        user means) and curated names rank first. One suggestion per generic
+        so the dropdown doesn't fill up with 8 near-duplicate brand labels."""
+        query = normalize_text(prefix)
+        if not query or not self.lookup:
+            return []
+
+        starts, contains = [], []
+        for name, (generic, kind) in self.lookup.items():
+            if name.startswith(query):
+                starts.append((name, generic, kind))
+            elif query in name:
+                contains.append((name, generic, kind))
+
+        curated_by_generic = {
+            g: set(e.get("curated_brands", [])) for g, e in self.entries.items()
+        }
+
+        def rank(item):
+            name, generic, _ = item
+            is_curated = name in curated_by_generic.get(generic, ())
+            return (0 if is_curated else 1, len(name), name)
+
+        starts.sort(key=rank)
+        contains.sort(key=rank)
+
+        seen_generics = set()
+        out = []
+        for name, generic, kind in starts + contains:
+            if generic in seen_generics:
+                continue
+            seen_generics.add(generic)
+            out.append({"query": name, "generic": generic, "kind": kind})
+            if len(out) >= limit:
+                break
+        return out
 
     def get_entry(self, generic_name: str) -> Optional[dict]:
         return self.entries.get(normalize_text(generic_name))
