@@ -43,6 +43,28 @@ h1, h2, h3, h4, h5, h6 {
         --radius: 0.5rem;
     }
 
+    .dark {
+        --background: 151 15% 8%;
+        --foreground: 60 10% 92%;
+        --card: 151 14% 11%;
+        --card-foreground: 60 10% 92%;
+        --popover: 151 14% 11%;
+        --popover-foreground: 60 10% 92%;
+        --primary: 151 30% 55%;
+        --primary-foreground: 151 39% 10%;
+        --secondary: 108 10% 40%;
+        --secondary-foreground: 60 20% 92%;
+        --muted: 151 10% 16%;
+        --muted-foreground: 51 6% 62%;
+        --accent: 15 40% 55%;
+        --accent-foreground: 60 20% 96%;
+        --destructive: 6 55% 58%;
+        --destructive-foreground: 60 20% 96%;
+        --border: 151 10% 20%;
+        --input: 151 10% 20%;
+        --ring: 108 12% 50%;
+    }
+
     * {
         @apply border-border;
     }

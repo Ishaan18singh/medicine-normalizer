@@ -1,6 +1,7 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { Toaster } from './components/ui/sonner';
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
@@ -30,9 +31,38 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
+const GlobalShortcuts = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    const handler = (e) => {
+      const isTyping = ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (!user) return;
+        if (location.pathname === '/dashboard') {
+          document.getElementById('medicine-input')?.focus();
+        } else {
+          navigate('/dashboard', { state: { focusSearch: true } });
+        }
+      } else if (e.key === '/' && !isTyping && user && location.pathname === '/dashboard') {
+        e.preventDefault();
+        document.getElementById('medicine-input')?.focus();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [navigate, location.pathname, user]);
+
+  return null;
+};
+
 function AppRoutes() {
   return (
     <BrowserRouter>
+      <GlobalShortcuts />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
@@ -50,9 +80,11 @@ function AppRoutes() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppRoutes />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

@@ -1,110 +1,124 @@
 import React, { useState, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Pill, LogOut, Menu, Search, FileText, BarChart3, Code, Camera, Upload } from 'lucide-react';
+import { Upload, Camera as CameraIcon, X, Plus, Download, ScanLine } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import { useAuth } from '../context/AuthContext';
+import Sidebar from '../components/layout/Sidebar';
+import useColdStartHint from '../hooks/useColdStartHint';
 import { toast } from 'sonner';
 import axios from 'axios';
 
-const Sidebar = ({ currentPage }) => {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  const menuItems = [
-    { icon: Search, label: 'Dashboard', path: '/dashboard' },
-    { icon: FileText, label: 'Bulk Processing', path: '/bulk' },
-    { icon: Camera, label: 'Scanner', path: '/scanner' },
-    { icon: BarChart3, label: 'Analytics', path: '/analytics', adminOnly: true },
-    { icon: Code, label: 'API', path: '/api-playground' },
-  ];
-
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
-  };
-
-  return (
-    <>
-      <button className="lg:hidden fixed top-4 left-4 z-50 bg-card p-2 rounded-md border border-border" onClick={() => setMobileOpen(!mobileOpen)}>
-        <Menu className="h-6 w-6" />
-      </button>
-      <div className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-card border-r border-border flex flex-col transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
-        <div className="p-6 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Pill className="h-6 w-6 text-primary" strokeWidth={1.5} />
-            <span className="text-lg font-bold text-primary" style={{ fontFamily: 'Outfit' }}>MedNormalize</span>
-          </div>
-          <p className="text-sm text-muted-foreground mt-2">{user?.name}</p>
-        </div>
-        <nav className="flex-1 p-4 space-y-2">
-          {menuItems.map((item) => {
-            if (item.adminOnly && user?.role !== 'admin') return null;
-            const Icon = item.icon;
-            const isActive = currentPage === item.path;
-            return (
-              <Link key={item.path} to={item.path} className={`flex items-center gap-3 px-4 py-3 rounded-md text-sm font-medium transition-colors ${isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-foreground'}`}>
-                <Icon className="h-5 w-5" strokeWidth={1.5} />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="p-4 border-t border-border">
-          <Button onClick={handleLogout} variant="outline" className="w-full justify-start gap-3 border-input hover:bg-accent">
-            <LogOut className="h-5 w-5" strokeWidth={1.5} />
-            Logout
-          </Button>
-        </div>
-      </div>
-      {mobileOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setMobileOpen(false)} />}
-    </>
-  );
-};
-
 export default function PrescriptionScanner() {
-  const [loading, setLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [normalizing, setNormalizing] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [extractedLines, setExtractedLines] = useState(null); // editable, pre-normalize
   const [results, setResults] = useState(null);
+  const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+  const loading = scanning || normalizing;
+  const showColdStartHint = useColdStartHint(loading);
 
-  const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const runOcr = async (file) => {
     if (!file.type.startsWith('image/')) {
       toast.error('Please select an image file');
       return;
     }
 
     const reader = new FileReader();
-    reader.onloadend = () => {
-      setPreview(reader.result);
-    };
+    reader.onloadend = () => setPreview(reader.result);
     reader.readAsDataURL(file);
 
-    setLoading(true);
+    setResults(null);
+    setExtractedLines(null);
+    setScanning(true);
     const formData = new FormData();
     formData.append('file', file);
 
     try {
       const { data } = await axios.post(
-        `${BACKEND_URL}/api/scan-prescription`,
+        `${BACKEND_URL}/api/ocr-extract`,
         formData,
-        {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          withCredentials: true
-        }
+        { headers: { 'Content-Type': 'multipart/form-data' }, withCredentials: true }
       );
-      setResults(data);
-      toast.success(`Extracted ${data.extracted_medicines.length} medicines from prescription!`);
+      if (data.extracted_medicines.length === 0) {
+        toast.error('No text found in that image');
+      } else {
+        setExtractedLines(data.extracted_medicines);
+        toast.success(`Found ${data.extracted_medicines.length} line(s) - review before normalizing`);
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to scan prescription');
     } finally {
-      setLoading(false);
+      setScanning(false);
     }
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) runOcr(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) runOcr(file);
+  };
+
+  const updateLine = (idx, value) => {
+    setExtractedLines((lines) => lines.map((l, i) => (i === idx ? value : l)));
+  };
+
+  const removeLine = (idx) => {
+    setExtractedLines((lines) => lines.filter((_, i) => i !== idx));
+  };
+
+  const addLine = () => {
+    setExtractedLines((lines) => [...lines, '']);
+  };
+
+  const handleNormalizeAll = async () => {
+    const lines = extractedLines.map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      toast.error('Add at least one medicine name');
+      return;
+    }
+    setNormalizing(true);
+    try {
+      const { data } = await axios.post(
+        `${BACKEND_URL}/api/bulk-normalize`,
+        { medicines: lines },
+        { withCredentials: true }
+      );
+      setResults(data.results);
+      toast.success(`Normalized ${data.results.length} medicine(s)!`);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to normalize medicines');
+    } finally {
+      setNormalizing(false);
+    }
+  };
+
+  const downloadCSV = () => {
+    if (!results) return;
+    const headers = ['Input', 'Normalized', 'Type', 'Confidence', 'Alternatives'];
+    const rows = results.map((r) => [
+      r.input,
+      r.normalized,
+      r.type,
+      (r.confidence * 100).toFixed(1) + '%',
+      r.alternatives.map((a) => a.name).join('; '),
+    ]);
+    const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'scanned-prescription.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   return (
@@ -117,26 +131,50 @@ export default function PrescriptionScanner() {
             <p className="text-base text-secondary-foreground">Upload a prescription image to extract medicine names</p>
           </div>
 
-          <Card className="bg-card border border-border shadow-sm rounded-lg p-6 mb-6" data-testid="image-upload-zone">
+          <Card
+            className={`bg-card border shadow-sm rounded-lg p-6 mb-6 transition-colors ${
+              dragActive ? 'border-primary border-2 bg-primary/5' : 'border-border'
+            }`}
+            data-testid="image-upload-zone"
+            onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={handleDrop}
+          >
             <div className="text-center">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileSelect}
-                className="hidden"
-                data-testid="file-input"
-              />
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={loading}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-md px-8 py-6 text-lg"
-                data-testid="upload-prescription-button"
-              >
-                <Upload className="h-6 w-6 mr-3" />
-                {loading ? 'Scanning...' : 'Upload Prescription Image'}
-              </Button>
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} className="hidden" data-testid="file-input" />
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileSelect} className="hidden" data-testid="camera-input" />
+
+              <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" strokeWidth={1} />
+              <p className="text-sm text-muted-foreground mb-4">Drag and drop a prescription image here, or</p>
+
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={loading}
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-md px-6"
+                  data-testid="upload-prescription-button"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {scanning ? 'Scanning...' : 'Choose Image'}
+                </Button>
+                <Button
+                  onClick={() => cameraInputRef.current?.click()}
+                  disabled={loading}
+                  variant="outline"
+                  className="border-input hover:bg-accent"
+                  data-testid="camera-capture-button"
+                >
+                  <CameraIcon className="h-4 w-4 mr-2" />
+                  Take Photo
+                </Button>
+              </div>
               <p className="text-sm text-muted-foreground mt-4">Supports JPG, PNG, JPEG</p>
+
+              {showColdStartHint && (
+                <p className="text-xs text-muted-foreground mt-3" data-testid="cold-start-hint">
+                  Still working — the server sleeps after inactivity and can take up to a minute to wake up.
+                </p>
+              )}
             </div>
 
             {preview && (
@@ -146,23 +184,54 @@ export default function PrescriptionScanner() {
             )}
           </Card>
 
+          {extractedLines && !results && (
+            <Card className="bg-card border border-border shadow-sm rounded-lg p-6 mb-6" data-testid="ocr-review-card">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium">Review extracted text</h3>
+                <p className="text-xs text-muted-foreground">OCR isn't perfect — fix anything that looks wrong before normalizing</p>
+              </div>
+              <div className="space-y-2">
+                {extractedLines.map((line, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      value={line}
+                      onChange={(e) => updateLine(idx, e.target.value)}
+                      className="flex-1 px-3 py-2 bg-background border border-input rounded-md text-sm focus:ring-2 focus:ring-ring focus:outline-none"
+                      data-testid={`ocr-line-${idx}`}
+                    />
+                    <button onClick={() => removeLine(idx)} className="text-muted-foreground hover:text-destructive transition-colors p-2" title="Remove line">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                <button onClick={addLine} className="flex items-center gap-1.5 text-sm text-primary hover:underline mt-2">
+                  <Plus className="h-4 w-4" /> Add line
+                </button>
+              </div>
+              <Button
+                onClick={handleNormalizeAll}
+                disabled={normalizing}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-md px-6 mt-4"
+                data-testid="normalize-extracted-button"
+              >
+                <ScanLine className="h-4 w-4 mr-2" />
+                {normalizing ? 'Normalizing...' : `Normalize ${extractedLines.filter((l) => l.trim()).length} medicine(s)`}
+              </Button>
+            </Card>
+          )}
+
           {results && (
             <div className="space-y-4">
               <Card className="bg-card border border-border shadow-sm rounded-lg p-6">
-                <h3 className="text-lg font-medium mb-4">Extracted Medicines ({results.extracted_medicines.length})</h3>
-                <div className="flex flex-wrap gap-2">
-                  {results.extracted_medicines.map((med, idx) => (
-                    <span key={idx} className="px-3 py-1 rounded-full text-sm bg-secondary/20 text-secondary-foreground">
-                      {med}
-                    </span>
-                  ))}
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium">Normalized Results ({results.length})</h3>
+                  <Button onClick={downloadCSV} variant="outline" size="sm" className="border-input hover:bg-accent" data-testid="download-scan-csv-button">
+                    <Download className="h-4 w-4 mr-2" />
+                    CSV
+                  </Button>
                 </div>
-              </Card>
-
-              <Card className="bg-card border border-border shadow-sm rounded-lg p-6">
-                <h3 className="text-lg font-medium mb-4">Normalized Results</h3>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {results.results.map((result, idx) => (
+                  {results.map((result, idx) => (
                     <div key={idx} className="px-4 py-3 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors">
                       <div className="flex items-center justify-between">
                         <div>
